@@ -1,6 +1,7 @@
 package nice
 
 import (
+	"context"
 	"runtime"
 	"sync"
 
@@ -8,8 +9,9 @@ import (
 )
 
 type entry struct {
-	priority int
-	waitChan chan func()
+	priority   int
+	waitChan   chan<- func()
+	cancelChan <-chan struct{}
 }
 
 type Scheduler struct {
@@ -52,25 +54,32 @@ func (s *Scheduler) assessEntries() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
-	if s.concurrency >= s.maxConcurrency {
-		return
-	}
+	for {
+		if s.concurrency >= s.maxConcurrency {
+			return
+		}
 
-	entry, has := s.entries.Pop()
-	if !has {
-		return
-	}
+		entry, has := s.entries.Pop()
+		if !has {
+			return
+		}
 
-	fnDone := func() {
-		close(entry.waitChan)
-		s.lock.Lock()
-		s.concurrency--
-		s.lock.Unlock()
-		s.done <- entry
-	}
+		fnDone := func() {
+			s.lock.Lock()
+			s.concurrency--
+			s.lock.Unlock()
+			s.done <- entry
+		}
 
-	entry.waitChan <- fnDone
-	s.concurrency++
+		select {
+		case <-entry.cancelChan:
+			s.done <- entry
+		default:
+			entry.waitChan <- fnDone
+			close(entry.waitChan)
+			s.concurrency++
+		}
+	}
 }
 
 func (s *Scheduler) schedule() {
@@ -89,15 +98,27 @@ func (s *Scheduler) schedule() {
 	}()
 }
 
-func (s *Scheduler) Wait(priority int) chan func() {
+func (s *Scheduler) WaitContext(ctx context.Context, priority int) func() {
 	waitChan := make(chan func())
+	cancelChan := make(chan struct{})
 
 	entry := entry{
-		priority: priority,
-		waitChan: waitChan,
+		priority:   priority,
+		waitChan:   waitChan,
+		cancelChan: cancelChan,
 	}
 
 	s.incoming <- entry
 
-	return waitChan
+	select {
+	case <-ctx.Done():
+		close(cancelChan)
+		return func() {}
+	case fnDone := <-waitChan:
+		return fnDone
+	}
+}
+
+func (s *Scheduler) Wait(priority int) func() {
+	return s.WaitContext(context.Background(), priority)
 }
