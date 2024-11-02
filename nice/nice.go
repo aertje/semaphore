@@ -98,7 +98,7 @@ func (s *Scheduler) schedule() {
 	}()
 }
 
-func (s *Scheduler) WaitContext(ctx context.Context, priority int) func() {
+func (s *Scheduler) WaitContext(ctx context.Context, priority int) (func(), error) {
 	waitChan := make(chan func())
 	cancelChan := make(chan struct{})
 
@@ -113,12 +113,13 @@ func (s *Scheduler) WaitContext(ctx context.Context, priority int) func() {
 	select {
 	case <-ctx.Done():
 		close(cancelChan)
-		return func() {}
+		return func() {}, ctx.Err()
 	case fnDone := <-waitChan:
-		return fnDone
+		return fnDone, nil
 	}
 }
 
 func (s *Scheduler) Wait(priority int) func() {
-	return s.WaitContext(context.Background(), priority)
+	fnDone, _ := s.WaitContext(context.Background(), priority)
+	return fnDone
 }

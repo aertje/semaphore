@@ -6,7 +6,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-
       - name: Check out
         uses: actions/checkout@v4
       - name: Set up Go
@@ -17,5 +16,5 @@ jobs:
         run: go get -v -t ./...
       - name: Build
         run: go build -v ./...
-      - name: Test with the Go CLI
+      - name: Test
         run: go test ./...
