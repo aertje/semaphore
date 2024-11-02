@@ -1,4 +1,4 @@
-package priority
+package nice
 
 import (
 	"runtime"
@@ -12,7 +12,7 @@ type entry struct {
 	waitChan chan func()
 }
 
-type P struct {
+type Scheduler struct {
 	maxConcurrency int
 
 	concurrency int
@@ -24,16 +24,16 @@ type P struct {
 	done     chan entry
 }
 
-type Option func(*P)
+type Option func(*Scheduler)
 
 func WithMaxConcurrency(maxConcurrency int) Option {
-	return func(p *P) {
+	return func(p *Scheduler) {
 		p.maxConcurrency = maxConcurrency
 	}
 }
 
-func New(opts ...Option) *P {
-	p := &P{
+func NewScheduler(opts ...Option) *Scheduler {
+	s := &Scheduler{
 		maxConcurrency: runtime.GOMAXPROCS(0),
 		entries:        queue.New[entry](),
 		incoming:       make(chan entry),
@@ -41,55 +41,55 @@ func New(opts ...Option) *P {
 	}
 
 	for _, opt := range opts {
-		opt(p)
+		opt(s)
 	}
 
-	p.schedule()
-	return p
+	s.schedule()
+	return s
 }
 
-func (p *P) assessEntries() {
-	p.lock.Lock()
-	defer p.lock.Unlock()
+func (s *Scheduler) assessEntries() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
 
-	if p.concurrency >= p.maxConcurrency {
+	if s.concurrency >= s.maxConcurrency {
 		return
 	}
 
-	entry, has := p.entries.Pop()
+	entry, has := s.entries.Pop()
 	if !has {
 		return
 	}
 
 	fnDone := func() {
 		close(entry.waitChan)
-		p.lock.Lock()
-		p.concurrency--
-		p.lock.Unlock()
-		p.done <- entry
+		s.lock.Lock()
+		s.concurrency--
+		s.lock.Unlock()
+		s.done <- entry
 	}
 
 	entry.waitChan <- fnDone
-	p.concurrency++
+	s.concurrency++
 }
 
-func (p *P) schedule() {
+func (s *Scheduler) schedule() {
 	go func() {
 		for {
 			select {
-			case entry := <-p.incoming:
-				p.lock.Lock()
-				p.entries.Push(entry.priority, entry)
-				p.lock.Unlock()
-				p.assessEntries()
-			case <-p.done:
-				p.assessEntries()
+			case entry := <-s.incoming:
+				s.lock.Lock()
+				s.entries.Push(entry.priority, entry)
+				s.lock.Unlock()
+				s.assessEntries()
+			case <-s.done:
+				s.assessEntries()
 			}
 		}
 	}()
 }
 
-func (p *P) Wait(priority int) chan func() {
+func (s *Scheduler) Wait(priority int) chan func() {
 	waitChan := make(chan func())
 
 	entry := entry{
@@ -97,13 +97,7 @@ func (p *P) Wait(priority int) chan func() {
 		waitChan: waitChan,
 	}
 
-	// p.lock.Lock()
-	// defer p.lock.Unlock()
-	// p.entries.Push(priority, entry)
-
-	// p.movement <- struct{}{}
-
-	p.incoming <- entry
+	s.incoming <- entry
 
 	return waitChan
 }
