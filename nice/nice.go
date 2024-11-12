@@ -10,7 +10,7 @@ import (
 
 type entry struct {
 	priority   int
-	waitChan   chan<- func()
+	waitChan   chan<- struct{}
 	cancelChan <-chan struct{}
 }
 
@@ -21,9 +21,6 @@ type Scheduler struct {
 
 	lock    sync.Mutex
 	entries *queue.Q[entry]
-
-	incoming chan entry
-	done     chan entry
 }
 
 type Option func(*Scheduler)
@@ -38,15 +35,12 @@ func NewScheduler(opts ...Option) *Scheduler {
 	s := &Scheduler{
 		maxConcurrency: runtime.GOMAXPROCS(0),
 		entries:        queue.New[entry](),
-		incoming:       make(chan entry),
-		done:           make(chan entry),
 	}
 
 	for _, opt := range opts {
 		opt(s)
 	}
 
-	s.schedule()
 	return s
 }
 
@@ -64,42 +58,19 @@ func (s *Scheduler) assessEntries() {
 			return
 		}
 
-		fnDone := func() {
-			s.lock.Lock()
-			s.concurrency--
-			s.lock.Unlock()
-			s.done <- entry
-		}
-
 		select {
 		case <-entry.cancelChan:
-			s.done <- entry
+			continue
 		default:
-			entry.waitChan <- fnDone
+			entry.waitChan <- struct{}{}
 			close(entry.waitChan)
 			s.concurrency++
 		}
 	}
 }
 
-func (s *Scheduler) schedule() {
-	go func() {
-		for {
-			select {
-			case entry := <-s.incoming:
-				s.lock.Lock()
-				s.entries.Push(entry.priority, entry)
-				s.lock.Unlock()
-				s.assessEntries()
-			case <-s.done:
-				s.assessEntries()
-			}
-		}
-	}()
-}
-
-func (s *Scheduler) WaitContext(ctx context.Context, priority int) (func(), error) {
-	waitChan := make(chan func())
+func (s *Scheduler) WaitContext(ctx context.Context, priority int) error {
+	waitChan := make(chan struct{})
 	cancelChan := make(chan struct{})
 
 	entry := entry{
@@ -108,18 +79,33 @@ func (s *Scheduler) WaitContext(ctx context.Context, priority int) (func(), erro
 		cancelChan: cancelChan,
 	}
 
-	s.incoming <- entry
+	s.lock.Lock()
+	s.entries.Push(entry.priority, entry)
+	s.lock.Unlock()
+
+	go func() {
+		s.assessEntries()
+	}()
 
 	select {
 	case <-ctx.Done():
 		close(cancelChan)
-		return func() {}, ctx.Err()
-	case fnDone := <-waitChan:
-		return fnDone, nil
+		return ctx.Err()
+	case <-waitChan:
+		return nil
 	}
 }
 
-func (s *Scheduler) Wait(priority int) func() {
-	fnDone, _ := s.WaitContext(context.Background(), priority)
-	return fnDone
+func (s *Scheduler) Wait(priority int) {
+	s.WaitContext(context.Background(), priority)
+}
+
+func (s *Scheduler) Done() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.concurrency--
+
+	go func() {
+		s.assessEntries()
+	}()
 }

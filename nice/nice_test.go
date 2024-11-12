@@ -14,8 +14,8 @@ import (
 func TestSimple(t *testing.T) {
 	s := nice.NewScheduler()
 
-	fnDone := s.Wait(1)
-	fnDone()
+	s.Wait(1)
+	s.Done()
 }
 
 func TestOrderConcurrency(t *testing.T) {
@@ -58,9 +58,9 @@ func testOrderForConcurrency(maxConcurrency int, totalTasks int) []int {
 	// immediately in undefined order.
 	for i := 0; i < maxConcurrency; i++ {
 		go func() {
-			fnDone := s.Wait(0)
+			s.Wait(0)
+			defer s.Done()
 			time.Sleep(10 * time.Millisecond)
-			fnDone()
 		}()
 	}
 
@@ -78,15 +78,14 @@ func testOrderForConcurrency(maxConcurrency int, totalTasks int) []int {
 			go func() {
 				defer wg.Done()
 
-				fnDone := s.Wait(priority)
+				s.Wait(priority)
+				defer s.Done()
 
 				time.Sleep(10 * time.Millisecond)
 
 				lock.Lock()
-				results = append(results, i)
 				defer lock.Unlock()
-
-				fnDone()
+				results = append(results, i)
 			}()
 		}
 	}
@@ -102,9 +101,9 @@ func TestCancel(t *testing.T) {
 	// Saturate the scheduler otherwise the task under test will be executed
 	// immediately without waiting.
 	go func() {
-		fnDone := s.Wait(0)
+		s.Wait(0)
 		time.Sleep(10 * time.Millisecond)
-		fnDone()
+		s.Done()
 	}()
 
 	// Give the scheduler some time to start the goroutine.
@@ -113,8 +112,8 @@ func TestCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	defer cancel()
 
-	fnDone, err := s.WaitContext(ctx, 1)
-	defer fnDone()
+	err := s.WaitContext(ctx, 1)
+	defer s.Done()
 
 	require.Error(t, err)
 	assert.Equal(t, context.DeadlineExceeded, err)
