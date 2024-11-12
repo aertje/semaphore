@@ -1,74 +1,48 @@
 package queue
 
-type Node[T any] struct {
+type Item[T any] struct {
 	value    T
 	priority int
-
-	next *Node[T]
-	prev *Node[T]
+	index    int
 }
 
-type Q[T any] struct {
-	head *Node[T]
-	tail *Node[T]
+func NewItem[T any](priority int, value T) *Item[T] {
+	return &Item[T]{value: value, priority: priority}
 }
 
-func New[T any]() *Q[T] {
-	return &Q[T]{}
+func (item *Item[T]) Value() T {
+	return item.value
 }
 
-func (q *Q[T]) Push(priority int, value T) {
-	node := &Node[T]{
-		value:    value,
-		priority: priority,
-	}
+type Q[T any] []*Item[T]
 
-	if q.head == nil {
-		q.head = node
-		q.tail = node
-		return
-	}
-
-	if priority < q.head.priority {
-		node.next = q.head
-		q.head.prev = node
-		q.head = node
-		return
-	}
-
-	current := q.head
-
-	for current.next != nil && priority >= current.next.priority {
-		current = current.next
-	}
-
-	node.next = current.next
-	node.prev = current
-	current.next = node
-
-	if node.next == nil {
-		q.tail = node
-	} else {
-		node.next.prev = node
-	}
+func (pq Q[T]) Len() int {
+	return len(pq)
 }
 
-func (q *Q[T]) Pop() (T, bool) {
-	if q.head == nil {
-		var zero T
-		return zero, false
-	}
+func (pq Q[T]) Less(i, j int) bool {
+	return pq[i].priority < pq[j].priority
+}
 
-	value := q.head.value
+func (pq Q[T]) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+	pq[i].index = i
+	pq[j].index = j
+}
 
-	if q.head == q.tail {
-		q.head = nil
-		q.tail = nil
-		return value, true
-	}
+func (pq *Q[T]) Push(x any) {
+	n := len(*pq)
+	item := x.(*Item[T])
+	item.index = n
+	*pq = append(*pq, item)
+}
 
-	q.head = q.head.next
-	q.head.prev = nil
-
-	return value, true
+func (pq *Q[T]) Pop() any {
+	old := *pq
+	n := len(old)
+	item := old[n-1]
+	old[n-1] = nil  // don't stop the GC from reclaiming the item eventually
+	item.index = -1 // for safety
+	*pq = old[0 : n-1]
+	return item
 }

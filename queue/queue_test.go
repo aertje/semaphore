@@ -1,6 +1,7 @@
 package queue_test
 
 import (
+	"container/heap"
 	"testing"
 
 	"github.com/aertje/gonice/queue"
@@ -8,18 +9,22 @@ import (
 )
 
 func TestOrder(t *testing.T) {
-	q := queue.New[string]()
+	q := new(queue.Q[string])
 
-	q.Push(2, "b")
-	q.Push(1, "a")
-	q.Push(3, "c")
+	heap.Init(q)
+	heap.Push(q, queue.NewItem(2, "b"))
+	heap.Push(q, queue.NewItem(3, "c"))
+	heap.Push(q, queue.NewItem(1, "a"))
+	heap.Push(q, queue.NewItem(2, "b"))
+	heap.Push(q, queue.NewItem(1, "a"))
+	heap.Push(q, queue.NewItem(3, "c"))
 
-	for _, want := range []string{"a", "b", "c"} {
-		val, has := q.Pop()
-		assert.True(t, has)
-		assert.Equal(t, want, val)
+	assert.Equal(t, 6, q.Len())
+
+	for _, want := range []string{"a", "a", "b", "b", "c", "c"} {
+		item := heap.Pop(q).(*queue.Item[string])
+		assert.Equal(t, want, item.Value())
 	}
 
-	_, has := q.Pop()
-	assert.False(t, has)
+	assert.Equal(t, 0, q.Len())
 }

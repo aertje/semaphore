@@ -1,6 +1,7 @@
 package nice
 
 import (
+	"container/heap"
 	"context"
 	"runtime"
 	"sync"
@@ -34,8 +35,10 @@ func WithMaxConcurrency(maxConcurrency int) Option {
 func NewScheduler(opts ...Option) *Scheduler {
 	s := &Scheduler{
 		maxConcurrency: runtime.GOMAXPROCS(0),
-		entries:        queue.New[entry](),
+		entries:        new(queue.Q[entry]),
 	}
+
+	heap.Init(s.entries)
 
 	for _, opt := range opts {
 		opt(s)
@@ -53,10 +56,10 @@ func (s *Scheduler) assessEntries() {
 			return
 		}
 
-		entry, has := s.entries.Pop()
-		if !has {
+		if s.entries.Len() == 0 {
 			return
 		}
+		entry := heap.Pop(s.entries).(*queue.Item[entry]).Value()
 
 		select {
 		case <-entry.cancelChan:
@@ -74,13 +77,12 @@ func (s *Scheduler) WaitContext(ctx context.Context, priority int) error {
 	cancelChan := make(chan struct{})
 
 	entry := entry{
-		priority:   priority,
 		waitChan:   waitChan,
 		cancelChan: cancelChan,
 	}
 
 	s.lock.Lock()
-	s.entries.Push(entry.priority, entry)
+	heap.Push(s.entries, queue.NewItem(priority, entry))
 	s.lock.Unlock()
 
 	go func() {
