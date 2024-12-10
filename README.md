@@ -45,7 +45,7 @@ func main() {
     // Register a task with the semaphore with a priority of 1.
     s.Acquire(1)
     // Ensure signalling the completion of the task.
-    defer s.Release(1)
+    defer s.Release()
 
     // Simulate a long-running task.
     time.Sleep(1 * time.Second)
