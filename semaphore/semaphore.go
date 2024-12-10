@@ -1,4 +1,4 @@
-package nice
+package semaphore
 
 import (
 	"container/heap"
@@ -6,16 +6,15 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/aertje/gonice/queue"
+	"github.com/aertje/semaphore/queue"
 )
 
 type entry struct {
-	priority   int
 	waitChan   chan<- struct{}
 	cancelChan <-chan struct{}
 }
 
-type Scheduler struct {
+type Prioritized struct {
 	maxConcurrency int
 
 	concurrency int
@@ -24,16 +23,16 @@ type Scheduler struct {
 	entries *queue.Q[entry]
 }
 
-type Option func(*Scheduler)
+type Option func(*Prioritized)
 
 func WithMaxConcurrency(maxConcurrency int) Option {
-	return func(p *Scheduler) {
+	return func(p *Prioritized) {
 		p.maxConcurrency = maxConcurrency
 	}
 }
 
-func NewScheduler(opts ...Option) *Scheduler {
-	s := &Scheduler{
+func NewPrioritized(opts ...Option) *Prioritized {
+	s := &Prioritized{
 		maxConcurrency: runtime.GOMAXPROCS(0),
 		entries:        new(queue.Q[entry]),
 	}
@@ -47,7 +46,7 @@ func NewScheduler(opts ...Option) *Scheduler {
 	return s
 }
 
-func (s *Scheduler) assessEntries() {
+func (s *Prioritized) assessEntries() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
@@ -72,7 +71,7 @@ func (s *Scheduler) assessEntries() {
 	}
 }
 
-func (s *Scheduler) WaitContext(ctx context.Context, priority int) error {
+func (s *Prioritized) AcquireContext(ctx context.Context, priority int) error {
 	waitChan := make(chan struct{})
 	cancelChan := make(chan struct{})
 
@@ -98,11 +97,11 @@ func (s *Scheduler) WaitContext(ctx context.Context, priority int) error {
 	}
 }
 
-func (s *Scheduler) Wait(priority int) {
-	s.WaitContext(context.Background(), priority)
+func (s *Prioritized) Acquire(priority int) {
+	s.AcquireContext(context.Background(), priority)
 }
 
-func (s *Scheduler) Done() {
+func (s *Prioritized) Release() {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 	s.concurrency--

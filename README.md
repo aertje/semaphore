@@ -1,14 +1,14 @@
-# Nice
+# Semaphore
 
-[![Go Reference](https://pkg.go.dev/badge/github.com/aertje/gonice.svg)](https://pkg.go.dev/github.com/aertje/gonice)
-[![Go Report Card](https://goreportcard.com/badge/github.com/aertje/gonice)](https://goreportcard.com/report/github.com/aertje/gonice)
+[![Go Reference](https://pkg.go.dev/badge/github.com/aertje/semaphore.svg)](https://pkg.go.dev/github.com/aertje/semaphore)
+[![Go Report Card](https://goreportcard.com/badge/github.com/aertje/semaphore)](https://goreportcard.com/report/github.com/aertje/semaphore)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-The `nice` package provides a priority-based concurrency control mechanism. It allows you to manage the execution of functions based on their priority while respecting a maximum concurrency limit. This is particularly useful in scenarios where certain tasks need to be prioritised over others, and there is a need to limit the number of concurrent tasks to avoid overloading the system.
+The `semaphore` package provides a priority-based concurrency control mechanism. It allows you to manage the execution of functions based on their priority while respecting a maximum concurrency limit. This is particularly useful in scenarios where certain tasks need to be prioritised over others, and there is a need to limit the number of concurrent tasks to avoid overloading the system.
 
 The general use case is to prioritise certain CPU-bound tasks over others. For example, in a web service, it could be used for example to prioritise the alive endpoint over the metrics endpoint, or to serve bulk requests before real-time requests.
 
-The implementation does not interfere with Go's runtime scheduler. It is opt-in and does not affect the behavior of other goroutines in the application.
+The implementation does not interfere with Go's runtime semaphore. It is opt-in and does not affect the behavior of other goroutines in the application.
 
 ## Features
 
@@ -21,12 +21,12 @@ The implementation does not interfere with Go's runtime scheduler. It is opt-in 
 To install the package, use the following command:
 
 ```sh
-go get github.com/aertje/gonice
+go get github.com/aertje/semaphore
 ```
 
 ## Simple example
 
-The following minimal example demonstrates how to use the `nice` package to create a scheduler that starts tasks based on their priority. It illustrates the required steps to create a scheduler, register a task with a specific priority, and signal the completion of the task.
+The following minimal example demonstrates how to use the `semaphore` package to create a semaphore that starts tasks based on their priority. It illustrates the required steps to create a semaphore, register a task with a specific priority, and signal the completion of the task.
 
 ```go
 package main
@@ -35,17 +35,17 @@ import (
     "fmt"
     "time"
 
-    "github.com/aertje/gonice/nice"
+    "github.com/aertje/semaphore/semaphore"
 )
 
 func main() {
-    // Create a new scheduler with the default maximum concurrency limit.
-    scheduler := nice.NewScheduler()
+    // Create a new prioritized semaphore with the default maximum concurrency limit.
+    s := semaphore.NewPrioritized()
 
-    // Register a task with the scheduler with a priority of 1.
-    fnDone := scheduler.Wait(1)
-    // Signal the completion of the task.
-    defer fnDone()
+    // Register a task with the semaphore with a priority of 1.
+    s.Acquire(1)
+    // Ensure signalling the completion of the task.
+    defer s.Release(1)
 
     // Simulate a long-running task.
     time.Sleep(1 * time.Second)
@@ -54,23 +54,23 @@ func main() {
 
 The steps are as follows:
 
-- Create a new scheduler with an optional maximum concurrency limit.
+- Create a new semaphore with an optional maximum concurrency limit.
 
 Then, for each task to be prioritised:
 
-- Register a task with the scheduler using the `Wait` method. This will block until the task can be executed. It returns a function that should be called to signal the completion of the task.
+- Register a task with the semaphore using the `Acquire` method. This will block until the task can be executed.
 - Execute the task.
-- Call the function returned from the call to `Wait` to signal the completion of the task to the scheduler.
+- Call the `Release` method to signal the completion of the task to the semaphore.
 
-Note the importance of calling the function returned by `Wait` to signal the completion of the task. This is necessary to allow other tasks to be executed by the scheduler.
+Note the importance of calling the `Release` method to signal the completion of the task. This is necessary to allow other tasks to be executed by the semaphore.
 
-If the context needs to be taken into account in order to support cancellation, the `WaitContext` method can be used instead.
+If the context needs to be taken into account in order to support cancellation, the `AcquireContext` method can be used instead.
 
 ## Example use case: Prioritizing `/alive` endpoint
 
-In this example, we will create a scheduler that prioritises an `/alive` endpoint over other endpoints. This is useful in scenarios where the `/alive` endpoint is critical and needs to be executed before other endpoints.
+In this example, we will create a semaphore that prioritises an `/alive` endpoint over other endpoints. This is useful in scenarios where the `/alive` endpoint is critical and needs to be executed before other endpoints.
 
-It also demonstrates use of the `WaitContext` method to support context cancellation. This is useful in scenarios where the client cancels the request, and the server should dispose of the task.
+It also demonstrates use of the `AcquireContext` method to support context cancellation. This is useful in scenarios where the client cancels the request, and the server should dispose of the task.
 
 ```go
 package main
@@ -81,16 +81,16 @@ import (
     "net/http"
     "time"
 
-    "github.com/aertje/gonice/nice"
+    "github.com/aertje/semaphore/semaphore"
 )
 
 func main() {
-    // Create a new scheduler with a maximum concurrency limit of 10.
-    scheduler := nice.NewScheduler(nice.WithMaxConcurrency(10))
+    // Create a new semaphore with a maximum concurrency limit of 10.
+    s := semaphore.NewPrioritized(semaphore.WithMaxConcurrency(10))
 
     http.HandleFunc("/alive", func(w http.ResponseWriter, r *http.Request) {
-        // Register a task with the scheduler with a higher priority of 1.
-        fnDone, err := scheduler.WaitContext(r.Context(), 1)
+        // Register a task with the semaphore with a higher priority of 1.
+        err := s.AcquireContext(r.Context(), 1)
         if err != nil {
             if errors.Is(err, context.Canceled) {
                 http.Error(w, context.Cause(r.Context()).Error(), 499)
@@ -100,14 +100,14 @@ func main() {
             http.Error(w, err.Error(), http.StatusInternalServerError)
             return
         }
-        defer fnDone()
+        defer s.Release()
 
         w.Write([]byte("I'm alive!"))
     })
 
     http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-        // Register a task with the scheduler with a lower priority of 2.
-        fnDone, err := scheduler.WaitContext(r.Context(), 2)
+        // Register a task with the semaphore with a lower priority of 2.
+        err := s.AcquireContext(r.Context(), 2)
         if err != nil {
             if errors.Is(err, context.Canceled) {
                 http.Error(w, context.Cause(r.Context()).Error(), 499)
@@ -118,7 +118,7 @@ func main() {
             return
         }
 
-        defer fnDone()
+        defer s.Release()
 
         time.Sleep(1 * time.Second)
 

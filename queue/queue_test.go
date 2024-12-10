@@ -4,7 +4,7 @@ import (
 	"container/heap"
 	"testing"
 
-	"github.com/aertje/gonice/queue"
+	"github.com/aertje/semaphore/queue"
 	"github.com/stretchr/testify/assert"
 )
 

@@ -1,4 +1,4 @@
-module github.com/aertje/gonice
+module github.com/aertje/semaphore
 
 go 1.23.0
 

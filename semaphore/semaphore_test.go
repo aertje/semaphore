@@ -1,4 +1,4 @@
-package nice_test
+package semaphore_test
 
 import (
 	"context"
@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/aertje/gonice/nice"
+	"github.com/aertje/semaphore/semaphore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestSimple(t *testing.T) {
-	s := nice.NewScheduler()
+	s := semaphore.NewPrioritized()
 
-	s.Wait(1)
-	s.Done()
+	s.Acquire(1)
+	s.Release()
 }
 
 func TestOrderConcurrency(t *testing.T) {
@@ -52,14 +52,14 @@ func TestOrderConcurrency(t *testing.T) {
 }
 
 func testOrderForConcurrency(maxConcurrency int, totalTasks int) []int {
-	s := nice.NewScheduler(nice.WithMaxConcurrency(maxConcurrency))
+	s := semaphore.NewPrioritized(semaphore.WithMaxConcurrency(maxConcurrency))
 
 	// Saturate the scheduler otherwise subsequent tasks will be executed
 	// immediately in undefined order.
 	for i := 0; i < maxConcurrency; i++ {
 		go func() {
-			s.Wait(0)
-			defer s.Done()
+			s.Acquire(0)
+			defer s.Release()
 			time.Sleep(10 * time.Millisecond)
 		}()
 	}
@@ -78,8 +78,8 @@ func testOrderForConcurrency(maxConcurrency int, totalTasks int) []int {
 			go func() {
 				defer wg.Done()
 
-				s.Wait(priority)
-				defer s.Done()
+				s.Acquire(priority)
+				defer s.Release()
 
 				time.Sleep(10 * time.Millisecond)
 
@@ -96,14 +96,14 @@ func testOrderForConcurrency(maxConcurrency int, totalTasks int) []int {
 }
 
 func TestCancel(t *testing.T) {
-	s := nice.NewScheduler(nice.WithMaxConcurrency(1))
+	s := semaphore.NewPrioritized(semaphore.WithMaxConcurrency(1))
 
 	// Saturate the scheduler otherwise the task under test will be executed
 	// immediately without waiting.
 	go func() {
-		s.Wait(0)
+		s.Acquire(0)
 		time.Sleep(10 * time.Millisecond)
-		s.Done()
+		s.Release()
 	}()
 
 	// Give the scheduler some time to start the goroutine.
@@ -112,8 +112,8 @@ func TestCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Millisecond)
 	defer cancel()
 
-	err := s.WaitContext(ctx, 1)
-	defer s.Done()
+	err := s.AcquireContext(ctx, 1)
+	defer s.Release()
 
 	require.Error(t, err)
 	assert.Equal(t, context.DeadlineExceeded, err)
