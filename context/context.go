@@ -6,15 +6,15 @@ import (
 	"github.com/aertje/semaphore/semaphore"
 )
 
-type schedulerKey struct{}
+type prioritizedKey struct{}
 
-var key = schedulerKey{}
+var key = prioritizedKey{}
 
-func SchedulerFromContext(ctx context.Context) (*semaphore.Prioritized, bool) {
+func PrioritizedFromContext(ctx context.Context) (*semaphore.Prioritized, bool) {
 	s, ok := ctx.Value(key).(*semaphore.Prioritized)
 	return s, ok
 }
 
-func WithScheduler(ctx context.Context, s *semaphore.Prioritized) context.Context {
+func WithPrioritized(ctx context.Context, s *semaphore.Prioritized) context.Context {
 	return context.WithValue(ctx, key, s)
 }
