@@ -3,6 +3,7 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/aertje/semaphore.svg)](https://pkg.go.dev/github.com/aertje/semaphore)
 [![Go Report Card](https://goreportcard.com/badge/github.com/aertje/semaphore)](https://goreportcard.com/report/github.com/aertje/semaphore)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Coverage](https://img.shields.io/badge/dynamic/json?url=https://raw.githubusercontent.com/aertje/semaphore/gh-pages/coverage.json&label=coverage&query=$.coverage&color=brightgreen)](https://aertje.github.io/semaphore/coverage.html)
 
 The `semaphore` package provides a priority-based concurrency control mechanism. It allows you to manage the execution of functions based on their priority while respecting a maximum concurrency limit. This is particularly useful in scenarios where certain tasks need to be prioritised over others, and there is a need to limit the number of concurrent tasks to avoid overloading the system.
 
