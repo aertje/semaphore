@@ -56,10 +56,11 @@ func testOrderForConcurrency(maxConcurrency int, totalTasks int) []int {
 
 	// Saturate the scheduler otherwise subsequent tasks will be executed
 	// immediately in undefined order.
-	for i := 0; i < maxConcurrency; i++ {
+	for range maxConcurrency {
 		go func() {
 			s.Acquire(0)
 			defer s.Release()
+
 			time.Sleep(10 * time.Millisecond)
 		}()
 	}
@@ -72,7 +73,7 @@ func testOrderForConcurrency(maxConcurrency int, totalTasks int) []int {
 	var wg sync.WaitGroup
 
 	for i := totalTasks / maxConcurrency; i > 0; i-- {
-		for j := 0; j < maxConcurrency; j++ {
+		for range maxConcurrency {
 			priority := i
 			wg.Add(1)
 			go func() {
@@ -102,8 +103,9 @@ func TestCancel(t *testing.T) {
 	// immediately without waiting.
 	go func() {
 		s.Acquire(0)
+		defer s.Release()
+
 		time.Sleep(10 * time.Millisecond)
-		s.Release()
 	}()
 
 	// Give the scheduler some time to start the goroutine.
@@ -117,4 +119,65 @@ func TestCancel(t *testing.T) {
 
 	require.Error(t, err)
 	assert.Equal(t, context.DeadlineExceeded, err)
+}
+
+func TestForceAcquire(t *testing.T) {
+	s := semaphore.NewPrioritized(semaphore.WithMaxConcurrency(1))
+
+	// Saturate the scheduler otherwise subsequent tasks will be executed
+	// immediately in undefined order.
+	go func() {
+		s.Acquire(0)
+		defer s.Release()
+
+		time.Sleep(10 * time.Millisecond)
+	}()
+
+	// Give the scheduler some time to start the goroutine.
+	time.Sleep(1 * time.Millisecond)
+
+	results := make([]bool, 0)
+	var lock sync.Mutex
+	var wg sync.WaitGroup
+
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			s.Acquire(0)
+			defer s.Release()
+
+			time.Sleep(10 * time.Millisecond)
+			lock.Lock()
+			defer lock.Unlock()
+			results = append(results, false)
+		}()
+	}
+	// Give the scheduler some time to start the goroutine.
+	time.Sleep(1 * time.Millisecond)
+
+	// These tasks start later, but they should finish earlier as they're
+	// prioritized by the force acquire - while the normal prioritized tasks are
+	// waiting for the concurrency to be available.
+	for range 5 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			s.ForceAcquire()
+			defer s.Release()
+
+			lock.Lock()
+			time.Sleep(10 * time.Millisecond)
+			defer lock.Unlock()
+			results = append(results, true)
+		}()
+	}
+
+	wg.Wait()
+
+	expected := []bool{true, true, true, true, true, false, false, false, false, false}
+	require.Len(t, results, len(expected))
+	assert.Equal(t, expected, results)
 }

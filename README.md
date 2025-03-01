@@ -15,6 +15,7 @@ The implementation does not interfere with Go's runtime semaphore. It is opt-in 
 - **Priority-based scheduling**: Tasks are executed based on their priority. High priority tasks are started before low priority tasks once the maximum concurrency limit is reached.
 - **Configurable maximum concurrency limit**: The number of concurrent tasks is configurable, defaulting to [`GOMAXPROCS`](https://pkg.go.dev/runtime#GOMAXPROCS).
 - **Context cancellation**: Waiting tasks can optionally be cancelled using a context.
+- **Force acquire**: Tasks can bypass the maximum concurrency limit using force acquire. These tasks will execute immediately but still count towards the concurrency limit for regular tasks. This ensures critical tasks are never blocked while maintaining backpressure on non-critical tasks.
 
 ## Installation
 
@@ -64,20 +65,22 @@ Then, for each task to be prioritised:
 
 Note the importance of calling the `Release` method to signal the completion of the task. This is necessary to allow other tasks to be executed by the semaphore.
 
-If the context needs to be taken into account in order to support cancellation, the `AcquireContext` method can be used instead.
+If the context needs to be taken into account in order to support cancellation, the `AcquireContext` method can be used instead. If a highly critical task needs to be executed, the `ForceAcquire` method can be used to bypass the maximum concurrency limit.
 
-## Example use case: Prioritizing `/alive` endpoint
+## Example use case: Prioritizing critical endpoints
 
-In this example, we will create a semaphore that prioritises an `/alive` endpoint over other endpoints. This is useful in scenarios where the `/alive` endpoint is critical and needs to be executed before other endpoints.
+This example demonstrates the key features of the semaphore:
 
-It also demonstrates use of the `AcquireContext` method to support context cancellation. This is useful in scenarios where the client cancels the request, and the server should dispose of the task.
+- Priority-based task execution
+- Force acquire for critical tasks
+- Context cancellation support
 
 ```go
 package main
 
 import (
     "context"
-    "errors"
+    "log"
     "net/http"
     "time"
 
@@ -85,47 +88,41 @@ import (
 )
 
 func main() {
-    // Create a new semaphore with a maximum concurrency limit of 10.
-    s := semaphore.NewPrioritized(semaphore.WithMaxConcurrency(10))
+    // Create a semaphore with max 2 concurrent tasks
+    s := semaphore.NewPrioritized(semaphore.WithMaxConcurrency(2))
 
-    http.HandleFunc("/alive", func(w http.ResponseWriter, r *http.Request) {
-        // Register a task with the semaphore with a higher priority of 1.
-        err := s.AcquireContext(r.Context(), 1)
-        if err != nil {
-            if errors.Is(err, context.Canceled) {
-                http.Error(w, context.Cause(r.Context()).Error(), 499)
-                return
-            }
+    // Critical health check - uses force acquire to bypass limits
+    http.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+        s.ForceAcquire()
+        defer s.Release()
+        w.Write([]byte("OK"))
+    })
 
-            http.Error(w, err.Error(), http.StatusInternalServerError)
+    // High priority endpoint - uses priority 1
+    http.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
+        if err := s.AcquireContext(r.Context(), 1); err != nil {
+            http.Error(w, "Request cancelled", 499)
             return
         }
         defer s.Release()
 
-        w.Write([]byte("I'm alive!"))
+        time.Sleep(100 * time.Millisecond) // Simulate work
+        w.Write([]byte("User data"))
     })
 
+    // Low priority endpoint - uses priority 2
     http.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-        // Register a task with the semaphore with a lower priority of 2.
-        err := s.AcquireContext(r.Context(), 2)
-        if err != nil {
-            if errors.Is(err, context.Canceled) {
-                http.Error(w, context.Cause(r.Context()).Error(), 499)
-                return
-            }
-
-            http.Error(w, err.Error(), http.StatusInternalServerError)
+        if err := s.AcquireContext(r.Context(), 2); err != nil {
+            http.Error(w, "Request cancelled", 499)
             return
         }
-
         defer s.Release()
 
-        time.Sleep(1 * time.Second)
-
-        w.Write([]byte("Metrics are here!"))
+        time.Sleep(500 * time.Millisecond) // Simulate heavy work
+        w.Write([]byte("Metrics data"))
     })
 
-    http.ListenAndServe(":8080", nil)
+    log.Fatal(http.ListenAndServe(":8080", nil))
 }
 ```
 

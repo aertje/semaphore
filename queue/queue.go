@@ -1,48 +1,60 @@
 package queue
 
-type Item[T any] struct {
+import "container/heap"
+
+type item[T any] struct {
 	value    T
 	priority int
 	index    int
 }
 
-func NewItem[T any](priority int, value T) *Item[T] {
-	return &Item[T]{value: value, priority: priority}
+type Q[T any] []*item[T]
+
+// Len implements heap.Interface.
+func (q Q[T]) Len() int {
+	return len(q)
 }
 
-func (item *Item[T]) Value() T {
-	return item.value
+// Less implements heap.Interface.
+func (q Q[T]) Less(i, j int) bool {
+	return q[i].priority < q[j].priority
 }
 
-type Q[T any] []*Item[T]
-
-func (pq Q[T]) Len() int {
-	return len(pq)
+// Swap implements heap.Interface, do not use this method directly.
+func (q Q[T]) Swap(i, j int) {
+	q[i], q[j] = q[j], q[i]
+	q[i].index = i
+	q[j].index = j
 }
 
-func (pq Q[T]) Less(i, j int) bool {
-	return pq[i].priority < pq[j].priority
-}
-
-func (pq Q[T]) Swap(i, j int) {
-	pq[i], pq[j] = pq[j], pq[i]
-	pq[i].index = i
-	pq[j].index = j
-}
-
-func (pq *Q[T]) Push(x any) {
-	n := len(*pq)
-	item := x.(*Item[T])
+// Push implements heap.Interface, do not use this method directly.
+func (q *Q[T]) Push(x any) {
+	n := len(*q)
+	item := x.(*item[T])
 	item.index = n
-	*pq = append(*pq, item)
+	*q = append(*q, item)
 }
 
-func (pq *Q[T]) Pop() any {
-	old := *pq
+// Pop implements heap.Interface, do not use this method directly.
+func (q *Q[T]) Pop() any {
+	old := *q
 	n := len(old)
 	item := old[n-1]
 	old[n-1] = nil  // don't stop the GC from reclaiming the item eventually
 	item.index = -1 // for safety
-	*pq = old[0 : n-1]
+	*q = old[0 : n-1]
 	return item
+}
+
+func (q *Q[T]) PushItem(priority int, value T) {
+	item := &item[T]{value: value, priority: priority}
+	heap.Push(q, item)
+}
+
+func (q *Q[T]) PopItem() T {
+	if q.Len() == 0 {
+		var zero T
+		return zero
+	}
+	return heap.Pop(q).(*item[T]).value
 }

@@ -58,7 +58,7 @@ func (s *Prioritized) assessEntries() {
 		if s.entries.Len() == 0 {
 			return
 		}
-		entry := heap.Pop(s.entries).(*queue.Item[entry]).Value()
+		entry := s.entries.PopItem()
 
 		select {
 		case <-entry.cancelChan:
@@ -71,7 +71,7 @@ func (s *Prioritized) assessEntries() {
 	}
 }
 
-func (s *Prioritized) AcquireContext(ctx context.Context, priority int) error {
+func (s *Prioritized) acquireInternal(ctx context.Context, priority int, force bool) error {
 	waitChan := make(chan struct{})
 	cancelChan := make(chan struct{})
 
@@ -81,7 +81,7 @@ func (s *Prioritized) AcquireContext(ctx context.Context, priority int) error {
 	}
 
 	s.lock.Lock()
-	heap.Push(s.entries, queue.NewItem(priority, entry))
+	s.entries.PushItem(priority, entry)
 	s.lock.Unlock()
 
 	go func() {
@@ -97,8 +97,18 @@ func (s *Prioritized) AcquireContext(ctx context.Context, priority int) error {
 	}
 }
 
+func (s *Prioritized) AcquireContext(ctx context.Context, priority int) error {
+	return s.acquireInternal(ctx, priority, false)
+}
+
 func (s *Prioritized) Acquire(priority int) {
-	s.AcquireContext(context.Background(), priority)
+	_ = s.acquireInternal(context.Background(), priority, false)
+}
+
+func (s *Prioritized) ForceAcquire() {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	s.concurrency++
 }
 
 func (s *Prioritized) Release() {
