@@ -55,7 +55,7 @@
 			<div id="nav">
 				<select id="files">
 				
-				<option value="file0">github.com/aertje/semaphore/context/context.go (0.0%)</option>
+				<option value="file0">github.com/aertje/semaphore/context/context.go (100.0%)</option>
 				
 				<option value="file1">github.com/aertje/semaphore/queue/queue.go (100.0%)</option>
 				
@@ -81,16 +81,16 @@ import (
         "github.com/aertje/semaphore/semaphore"
 )
 
-type schedulerKey struct{}
+type prioritizedKey struct{}
 
-var key = schedulerKey{}
+var key = prioritizedKey{}
 
-func SchedulerFromContext(ctx context.Context) (*semaphore.Prioritized, bool) <span class="cov0" title="0">{
+func PrioritizedFromContext(ctx context.Context) (*semaphore.Prioritized, bool) <span class="cov8" title="1">{
         s, ok := ctx.Value(key).(*semaphore.Prioritized)
         return s, ok
 }</span>
 
-func WithScheduler(ctx context.Context, s *semaphore.Prioritized) context.Context <span class="cov0" title="0">{
+func WithPrioritized(ctx context.Context, s *semaphore.Prioritized) context.Context <span class="cov8" title="1">{
         return context.WithValue(ctx, key, s)
 }</span>
 </pre>
